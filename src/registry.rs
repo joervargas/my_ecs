@@ -1,74 +1,53 @@
 use std::{
     any::{Any, TypeId}, 
-    collections::HashMap
+    collections::{HashMap, HashSet}
 };
 
 use crate::{
     component_store::{ComponentStore, VecStore}, 
-    entity::IdGenerationManager, 
-    entity_builder::EntityBuilder, 
-    query::QueryBuilder
+    entity::{Entity, EntityManager}, 
+    entity_builder::EntityBuilder, query::QueryBuilder, 
+    // query::QueryBuilder
 };
 
 pub struct Registry
 {
     pub components: HashMap<TypeId, Box<dyn ComponentStore>>,
-    generator: IdGenerationManager
+    pub(crate) entities: EntityManager
 }
 
 impl Registry
 {
+    /// Creates a new registry
     pub fn new() -> Self
     {
         Self {
             components: HashMap::new(),
-            generator: IdGenerationManager::new()
+            entities: EntityManager::new()
         }
     }
 
+    /// Adds a new component to the registry
     pub fn register_component<T: Any>(&mut self)
     {
         let type_id = TypeId::of::<T>();
         let mut comps: VecStore<T> = VecStore::new();
         // if entities already exist, populate the Vec with None
-        if !self.generator.is_activated_empty()
+        if !self.entities.is_activated_empty()
         {
-            comps.resize_to_nones(self.generator.activated_size());
+            comps.resize_to_nones(self.entities.activated_size());
         }
 
         self.components.insert(type_id, Box::new(comps));
     }
 
-    // pub fn create_entity(&mut self) -> &mut Self
+    /// Creates a new EntityBuilder instance
     pub fn create_entity(&mut self) -> EntityBuilder
     {
-        let entity = self.generator.activate();
-        // if deactiveated entities exist to use, use that
-        if !self.generator.is_deactivated_empty()
-        {
-            // if let Some(id) = self.generator.deactive_last()
-            // {
-                self.components.iter_mut().for_each(
-                    | (_type_id, comps) |
-                    {
-                        comps.set_none(entity.id);
-                    }
-                );
-            // }
-        } 
-        else // allocate entity data with push to end
-        { 
-            self.components.iter_mut().for_each(
-                | (_type_id, comps) |
-                {
-                    comps.push_none();
-                }
-            );
-        }
-
-        EntityBuilder::new(entity.id, entity.generation, self)
+        EntityBuilder::new(self)
     }
 
+    /// Revtrieves a Vecstore of Type T components if they exist
     pub fn get_components<T: Any>(&self) -> Option<&VecStore<T>>
     {
         let type_id = TypeId::of::<T>();
@@ -80,6 +59,7 @@ impl Registry
         }
     }
 
+    /// Revtrieves a mutable Vecstore of Type T components if they exist
     pub fn get_components_mut<T: Any>(&mut self) -> Option<&mut VecStore<T>>
     {
         let type_id = TypeId::of::<T>();
@@ -91,9 +71,28 @@ impl Registry
         }
     }
 
-    pub fn create_query(&self) -> QueryBuilder
+    /// Returns an entity given an id if it exists
+    pub fn get_entity(&self, id: usize) -> Option<&Entity>
     {
-        todo!()
+        self.entities.get(id)
+    }
+
+    /// Returns a mutable entity given an id if it exists
+    pub fn get_entity_mut(&mut self, id: usize) -> Option<&mut Entity>
+    {
+        self.entities.get_mut(id)
+    }
+
+    /// Returns a vector of entity ids given a set of components TypeIds
+    pub fn get_entity_ids(&self, type_ids: &HashSet<TypeId>) -> Vec<usize>
+    {
+        self.entities.filter_by_components(&type_ids)
+    }
+
+    /// Starts QueryBuilder
+    pub fn query(&self) -> QueryBuilder
+    {
+        QueryBuilder::new(self)
     }
 
 }
@@ -101,6 +100,8 @@ impl Registry
 #[cfg(test)]
 mod tests
 {
+    use crate::entity;
+
     use super::*;
 
     #[test]
@@ -110,16 +111,37 @@ mod tests
         registry.register_component::<Health>();
         registry.register_component::<Speed>();
 
-        let entity = registry.create_entity()
+        let e1 = registry.create_entity()
             .with_component::<Health>(Health{value: 100})
             .with_component::<Speed>(Speed{value: 100})
             .build();
 
-        assert_eq!(entity.id, 0);
-        assert_eq!(entity.type_ids.contains(&TypeId::of::<Health>()), true);
-        assert_eq!(entity.type_ids.contains(&TypeId::of::<Speed>()), true);
-
+        let entity1 = registry.get_entity(e1).unwrap();
+        
+        assert_eq!(e1, 0);
+        assert_eq!(entity1.type_ids.contains(&TypeId::of::<Health>()), true);
+        assert_eq!(entity1.type_ids.contains(&TypeId::of::<Speed>()), true);
+        
         assert_eq!(registry.components.contains_key(&TypeId::of::<Health>()), true);
+
+        let e2 = registry.create_entity()
+            .with_component::<Health>(Health{value: 100})
+            .with_component::<Position>(Position{X: 1.0, Y: 1.0})
+            .build();
+
+        let entity2 = registry.get_entity(e2).unwrap();
+
+        assert_eq!(e2, 1);
+        assert_eq!(entity2.type_ids.contains(&TypeId::of::<Health>()), true);
+        assert_eq!(entity2.type_ids.contains(&TypeId::of::<Position>()), true);
+
+        let query = registry.query()
+            .with_component::<Health>()
+            .with_component::<Position>()
+            .get();
+
+        assert_eq!(query.len(), 1);
+        assert_eq!(query[0], entity2.id);
     }
 
     struct Health
@@ -130,5 +152,11 @@ mod tests
     struct Speed
     {
         pub value: u32
+    }
+
+    struct Position
+    {
+        pub X: f32,
+        pub Y: f32
     }
 }

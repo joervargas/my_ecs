@@ -6,7 +6,7 @@ mod registry;
 mod query;
 mod world;
 
-mod tuple_append;
+// mod tuple_append;
 
 
 pub fn add(left: usize, right: usize) -> usize {
