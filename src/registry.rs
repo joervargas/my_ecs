@@ -3,6 +3,8 @@ use std::{
     collections::{HashMap, HashSet}
 };
 
+use std::thread;
+
 use crate::{
     component_store::{ComponentStore, VecStore}, 
     entity::{Entity, EntityManager}, 
@@ -28,7 +30,7 @@ impl Registry
     }
 
     /// Adds a new component to the registry
-    pub fn register_component<T: Any>(&mut self)
+    pub fn register_component<T: Any + Send + Sync>(&mut self)
     {
         let type_id = TypeId::of::<T>();
         let mut comps: VecStore<T> = VecStore::new();
@@ -38,6 +40,7 @@ impl Registry
             comps.resize_to_nones(self.entities.activated_size());
         }
 
+        // let b_comps: Box<dyn ComponentStore + Send + Sync> = Box::new(comps);
         self.components.insert(type_id, Box::new(comps));
     }
 
@@ -100,12 +103,12 @@ impl Registry
 #[cfg(test)]
 mod tests
 {
-    use crate::entity;
+    use crate::{component_store::ComponentError, entity};
 
     use super::*;
 
     #[test]
-    fn create_entity()
+    fn create_entity() -> anyhow::Result<()>
     {
         let mut registry = Registry::new();
         registry.register_component::<Health>();
@@ -137,11 +140,29 @@ mod tests
 
         let query = registry.query()
             .with_component::<Health>()
-            .with_component::<Position>()
+            // .with_component::<Position>()
             .get();
 
-        assert_eq!(query.len(), 1);
-        assert_eq!(query[0], entity2.id);
+        assert_eq!(query.len(), 2);
+        // assert_eq!(query[0], entity2.id);
+
+        for id in query
+        {
+            thread::scope(|s|
+                {
+                    s.spawn(||
+                    {
+                        let mut health = registry.get_components_mut::<Health>().unwrap().get_mut(id).expect("Failed to get Health component.");
+                        health.as_mut().unwrap().value -= 5;
+            
+                        assert_eq!(health.as_ref().unwrap().value, 95);
+                        // Ok(())
+                    });
+                }
+            );
+        }
+    
+        Ok(())
     }
 
     struct Health

@@ -3,6 +3,7 @@ mod entity_builder;
 mod component_store;
 mod resource;
 mod registry;
+mod system;
 mod query;
 mod world;
 

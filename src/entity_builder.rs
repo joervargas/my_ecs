@@ -1,12 +1,10 @@
 use std::{
     any::{Any, TypeId}, 
-    collections::HashSet
+    collections::HashSet, 
 };
 
 use crate::{
-    component_store::VecStore, 
-    entity::Entity, 
-    registry::Registry
+    component_store::VecStore, registry::Registry
 };
 
 
@@ -22,12 +20,6 @@ pub struct EntityBuilder<'a>
 
 impl<'a> EntityBuilder<'a>
 {
-    // /// Creates a new EntityBuilder
-    // pub fn new(id: usize, generation: u64, is_active: bool, registry: &'a mut Registry) -> Self
-    // {
-    //     Self { id, generation, type_ids: HashSet::new(), is_active,registry }
-    // }
-
     /// Creates a new EntityBuilder
     pub fn new(registry: &'a mut Registry) -> Self
     {
@@ -36,15 +28,12 @@ impl<'a> EntityBuilder<'a>
         // if deactiveated entities exist to use, use that
         if !registry.entities.is_deactivated_empty()
         {
-            // if let Some(id) = self.generator.deactive_last()
-            // {
-                registry.components.iter_mut().for_each(
-                    | (_type_id, comps) |
-                    {
-                        comps.set_none(id);
-                    }
-                );
-            // }
+            registry.components.iter_mut().for_each(
+                | (_type_id, comps) |
+                {
+                    comps.set_none(id);
+                }
+            );
         } 
         else // allocate entity data with push to end
         { 
@@ -60,7 +49,7 @@ impl<'a> EntityBuilder<'a>
     }
 
     /// Adds a component to the entity
-    pub fn with_component<T: Any>(&mut self, data: T) -> &mut Self
+    pub fn with_component<T: Any + Send + Sync>(&mut self, data: T) -> &mut Self
     {
         let type_id = TypeId::of::<T>();
         // if component doesn't exist in registry, add it
@@ -74,8 +63,7 @@ impl<'a> EntityBuilder<'a>
             // downcast Any to VecStore<T>
             if let Some(vstore) = comps.as_any_mut().downcast_mut::<VecStore<T>>()
             {
-                // vstore.set(self.id, Some(data));
-                if let Some(mut component) = vstore.get_mut(self.id)
+                if let Ok(mut component) = vstore.get_mut(self.id)
                 {
                     *component = Some(data);
                 }

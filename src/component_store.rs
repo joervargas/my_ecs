@@ -1,7 +1,40 @@
-use std::any::Any;
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{any::Any, fmt, error};
+pub use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-pub trait ComponentStore
+// use anyhow;
+
+pub struct ComponentError
+{
+    // code: usize,
+    message: String
+}
+
+impl fmt::Display for ComponentError
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result
+    {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl fmt::Debug for ComponentError
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result 
+    {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl<T: error::Error + Send + Sync + 'static> From<T> for ComponentError 
+{
+    fn from(e: T) -> Self 
+    {
+        Self { message: e.to_string()}
+    }
+}
+
+
+pub trait ComponentStore: Send + Sync
 {
     fn push_none(&mut self);
 
@@ -14,95 +47,7 @@ pub trait ComponentStore
     fn as_any(&self) -> &dyn Any;
 
     fn as_any_mut(&mut self) -> &mut dyn Any;
-
-    // fn set(&mut self, index: usize, data: Option<impl Any>);
-
-    // fn get(&self, index: usize) -> Option<&impl Any>;
-
-    // fn get_mut(&mut self, index: usize) -> Option<&mut impl Any>;
-
 }
-
-// pub struct VecStore<T>
-// {
-//     data: Vec<Option<T>>
-// }
-
-// impl <T> VecStore<T>
-// {
-//     pub fn new() -> Self
-//     {
-//         Self { data: Vec::new() }
-//     }
-
-//     pub fn get(&self, index: usize) -> Option<&T>
-//     {
-//         self.data[index].as_ref()
-//     }
-
-//     pub fn set(&mut self, index: usize, data: Option<T>)
-//     {
-//         self.data[index] = data;
-//     }
-
-//     pub fn len(&self) -> usize
-//     {
-//         self.data.len()
-//     }
-// }
-
-// impl<T: 'static> ComponentStore for VecStore<T>
-// {
-//     fn push_none(&mut self)
-//     {
-//         self.data.push(None)
-//     }
-
-//     fn set_none(&mut self, index: usize) 
-//     {
-//         self.data[index] = None;
-//     }
-    
-//     fn resize_to_nones(&mut self, len: usize)
-//     {
-//         self.data.resize_with(len, || { None } );
-//     }
-
-//     fn drop(&mut self, index: usize)
-//     {
-//         self.data[index] = None;
-//     }
-
-//     fn as_any(&self) -> &dyn Any
-//     {
-//         self as &dyn std::any::Any
-//     }
-
-//     fn as_any_mut(&mut self) -> &mut dyn Any
-//     {
-//         self as &mut dyn std::any::Any
-//     }
-
-//     // fn set(&mut self, index: usize, data: Option<impl Any>)
-//     // {
-//     //     self.data[index] = data;
-//     // }
-
-//     // fn get(&self, index: usize) -> Option<&Self::DataType> 
-//     // {
-//     //     self.data[index].as_ref()
-//     // }
-
-//     // fn get_mut(&mut self, index: usize) -> Option<&mut Self::DataType>
-//     // {
-//     //     self.data[index].as_mut()
-//     // }
-
-//     // fn resize_with(&mut self, len: usize, f: impl Fn() -> Option<Self::DataType>)
-//     // {
-//     //     self.data.resize_with(len, f);
-//     // }
-// }
 
 pub struct VecStore<T>
 {
@@ -116,45 +61,40 @@ impl <T> VecStore<T>
         Self { data: Vec::new() }
     }
 
-    pub fn get(&self, index: usize) -> Option<RwLockReadGuard<Option<T>>>
+    pub fn get(&self, index: usize) -> Result<RwLockReadGuard<Option<T>>, ComponentError>
     {
-        // if let Ok(v) = self.data.read()
-        // {
-        //     return Some(v)
-        // } else {
-        //     return None
-        // }
-        // self.data[index].as_ref()
-        if let Ok(data) = self.data[index].read()
+        match self.data[index].read()
         {
-            Some(data)
-        } else {
-            None
+            Ok(data) => Ok(data),
+            Err(err) => 
+            {
+                let comp_error = ComponentError { message: format!("Failed to get component at entity id {index}: {err:?}") };
+                Err(comp_error)
+            }
         }
     }
 
-    pub fn get_mut(&mut self, index: usize) -> Option<RwLockWriteGuard<Option<T>>>
+    pub fn get_mut(&mut self, index: usize) -> Result<RwLockWriteGuard<Option<T>>, ComponentError>
     {
-        if let Ok(data) = self.data[index].write()
+        match self.data[index].write()
         {
-            Some(data)
-        } else {
-            None
+            Ok(data) => Ok(data),
+            Err(err) => 
+            {
+                let comp_error = ComponentError { message: format!("Failed to get mut component at entity id {index}: {err:?}") };
+                Err(comp_error)
+            }
         }
     }
-
-    // pub fn set(&mut self, index: usize, data: Option<T>)
-    // {
-    //     self.data[index] = data;
-    // }
 
     pub fn len(&self) -> usize
     {
         self.data.len()
     }
+
 }
 
-impl<T: 'static> ComponentStore for VecStore<T>
+impl<T: Send + Sync + 'static> ComponentStore for VecStore<T>
 {
     fn push_none(&mut self)
     {
@@ -188,23 +128,4 @@ impl<T: 'static> ComponentStore for VecStore<T>
         self as &mut dyn std::any::Any
     }
 
-    // fn set(&mut self, index: usize, data: Option<impl Any>)
-    // {
-    //     self.data[index] = data;
-    // }
-
-    // fn get(&self, index: usize) -> Option<&Self::DataType> 
-    // {
-    //     self.data[index].as_ref()
-    // }
-
-    // fn get_mut(&mut self, index: usize) -> Option<&mut Self::DataType>
-    // {
-    //     self.data[index].as_mut()
-    // }
-
-    // fn resize_with(&mut self, len: usize, f: impl Fn() -> Option<Self::DataType>)
-    // {
-    //     self.data.resize_with(len, f);
-    // }
 }
